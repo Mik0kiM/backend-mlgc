@@ -3,31 +3,44 @@ const crypto = require('crypto');
 const storeData = require('../services/storeData');
 
 async function postPredictHandler(request, h) {
-  const { image } = request.payload;
-  const { model } = request.server.app;
+  try {
+    if (request.payload.image.byteLength > 1000000) { // Check if the image size exceeds 1MB
+      return h.response({
+        status: 'fail',
+        message: 'Payload content length greater than maximum allowed: 1000000'
+      }).code(413);
+    }
 
-  const { confidenceScore, label, explanation, suggestion } = await predictClassification(model, image);
-  const id = crypto.randomUUID();
-  const createdAt = new Date().toISOString();
+    const { image } = request.payload;
+    const { model } = request.server.app;
 
-  const data = {
-    "id": id,
-    "result": label,
-    "explanation": explanation,
-    "suggestion": suggestion,
-    "confidenceScore": confidenceScore,
-    "createdAt": createdAt
+    const { confidenceScore, label } = await predictClassification(model, image);
+    const id = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    const suggestion = label === 'Cancer' ? "Segera periksa ke dokter!" : "Risiko rendah, tetap monitor kondisi.";
+
+    const data = {
+      id: id,
+      result: label,
+      suggestion: suggestion,
+      createdAt: createdAt
+    }
+
+    await storeData(id, data);
+
+    const response = h.response({
+      status: 'success',
+      message: 'Model is predicted successfully',
+      data: data
+    });
+    response.code(201);
+    return response;
+  } catch (error) {
+    return h.response({
+      status: 'fail',
+      message: 'Terjadi kesalahan dalam melakukan prediksi'
+    }).code(400);
   }
-
-  await storeData(id,data);
-
-  const response = h.response({
-    status: 'success',
-    message: confidenceScore > 99 ? 'Model is predicted successfully.' : 'Model is predicted successfully but under threshold. Please use the correct picture',
-    data
-  })
-  response.code(201);
-  return response;
 }
 
 module.exports = postPredictHandler;
